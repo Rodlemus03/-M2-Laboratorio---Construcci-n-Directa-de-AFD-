@@ -5,7 +5,15 @@ import os
 
 app = Flask(__name__)
 
-# Shutting yard
+def add_concat_operator(expression):
+    result = ""
+    operators = {'|', '*', '(', ')'}
+    for i in range(len(expression)):
+        result += expression[i]
+        if i + 1 < len(expression):
+            if (expression[i].isalnum() or expression[i] == ')') and (expression[i+1].isalnum() or expression[i+1] == '('):
+                result += '.'
+    return result
 
 def infix_to_postfix(expression):
     precedence = {'|': 1, '.': 2, '*': 3}
@@ -97,6 +105,7 @@ def compute_followpos(node, followpos_table):
             followpos_table[pos] |= node.firstpos
 
 def build_afd(infix_expression):
+    infix_expression = add_concat_operator(infix_expression)
     postfix = infix_to_postfix(infix_expression)
     tree = postfix_to_tree(postfix)
     compute_nullable_first_last(tree)
@@ -106,15 +115,18 @@ def build_afd(infix_expression):
 
 def visualize_tree(tree):
     dot = graphviz.Digraph(format='png')
+    
     def add_nodes_edges(node):
         if node:
-            dot.node(str(id(node)), node.value)
+            label = f"{node.value}\nNullable: {node.nullable}\nFirstpos: {node.firstpos}\nLastpos: {node.lastpos}"
+            dot.node(str(id(node)), label)
             if node.left:
                 dot.edge(str(id(node)), str(id(node.left)))
                 add_nodes_edges(node.left)
             if node.right:
                 dot.edge(str(id(node)), str(id(node.right)))
                 add_nodes_edges(node.right)
+    
     add_nodes_edges(tree)
     image_path = "static/syntax_tree.png"
     dot.render(image_path[:-4])
