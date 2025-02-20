@@ -3,73 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Visualizador de Expresiones Regulares</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin: 20px;
-        }
-        input {
-            padding: 8px;
-            width: 300px;
-            margin: 10px;
-        }
-        button {
-            padding: 10px 15px;
-            background-color: #28a745;
-            color: white;
-            border: none;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #218838;
-        }
-        img {
-            margin-top: 20px;
-            max-width: 80%;
-        }
-        table {
-            margin: 20px auto;
-            border-collapse: collapse;
-        }
-        th, td {
-            border: 1px solid black;
-            padding: 5px 10px;
-        }
-    </style>
+    <title>Visualización de AFN, AFD y Árbol de Sintaxis</title>
 </head>
 <body>
-    <h2>Visualizador de Expresiones Regulares</h2>
-    <form method="POST">
-        <input type="text" name="expression" placeholder="Ingrese una expresión infix" required>
+    <h1>Generación y Visualización</h1>
+    
+    <form method="post">
+        <label for="expression">Expresión Regular:</label>
+        <input type="text" id="expression" name="expression" required>
         <button type="submit">Generar</button>
     </form>
 
     {% if postfix %}
-        <h3>Postfix:</h3>
+        <h2>Expresión en Postfix:</h2>
         <p>{{ postfix }}</p>
     {% endif %}
 
-    {% if followpos_table %}
-        <h3>Tabla de Followpos:</h3>
-        <table>
-            <tr>
-                <th>Posición</th>
-                <th>Followpos</th>
-            </tr>
-            {% for pos, follows in followpos_table.items() %}
-                <tr>
-                    <td>{{ pos }}</td>
-                    <td>{{ follows | join(', ') }}</td>
-                </tr>
-            {% endfor %}
-        </table>
+    {% if afn_image %}
+        <h2>Autómata Finito No Determinista (AFN)</h2>
+        <img src="{{ url_for('static', filename=afn_image) }}" alt="AFN">
     {% endif %}
 
-    {% if image_path %}
-        <h3>Árbol Sintáctico:</h3>
-        <img src="{{ image_path }}" alt="Árbol Sintáctico">
+    {% if afd_image %}
+        <h2>Autómata Finito Determinista (AFD)</h2>
+        <img src="{{ url_for('static', filename=afd_image) }}" alt="AFD">
+    {% endif %}
+
+    {% if syntax_tree_image %}
+        <h2>Árbol de Sintaxis</h2>
+        <img src="{{ url_for('static', filename=syntax_tree_image) }}" alt="Árbol de Sintaxis">
     {% endif %}
 </body>
 </html>

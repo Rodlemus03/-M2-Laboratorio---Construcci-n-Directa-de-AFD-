@@ -1,148 +1,131 @@
 from flask import Flask, render_template, request
 import graphviz
+import re
 from collections import defaultdict
-import os
 
 app = Flask(__name__)
 
-def add_concat_operator(expression):
-    result = ""
-    operators = {'|', '*', '(', ')'}
-    for i in range(len(expression)):
-        result += expression[i]
-        if i + 1 < len(expression):
-            if (expression[i].isalnum() or expression[i] == ')') and (expression[i+1].isalnum() or expression[i+1] == '('):
-                result += '.'
-    return result
-
+# Implementación del algoritmo de Shunting Yard
 def infix_to_postfix(expression):
-    precedence = {'|': 1, '.': 2, '*': 3}
+    precedence = {'|': 1, '.': 2, '*': 3, '+': 3, '?': 3}
     output = []
     stack = []
     
     for char in expression:
         if char.isalnum():
             output.append(char)
+        elif char in precedence:
+            while stack and precedence.get(stack[-1], 0) >= precedence[char]:
+                output.append(stack.pop())
+            stack.append(char)
         elif char == '(':
             stack.append(char)
         elif char == ')':
             while stack and stack[-1] != '(':
                 output.append(stack.pop())
             stack.pop()
-        else:
-            while stack and stack[-1] != '(' and precedence[stack[-1]] >= precedence[char]:
-                output.append(stack.pop())
-            stack.append(char)
     
     while stack:
         output.append(stack.pop())
     
     return ''.join(output)
 
-class Node:
-    def __init__(self, value, left=None, right=None):
-        self.value = value
-        self.left = left
-        self.right = right
-        self.nullable = False
-        self.firstpos = set()
-        self.lastpos = set()
-        self.position = None
-
-def postfix_to_tree(postfix):
+# Construcción del AFN
+def construct_afn(postfix):
+    state_count = 0
     stack = []
-    position = 1
+    transitions = {}
+    
     for symbol in postfix:
         if symbol.isalnum():
-            node = Node(symbol)
-            node.position = position
-            node.firstpos.add(position)
-            node.lastpos.add(position)
-            position += 1
-            stack.append(node)
-        elif symbol in "|.*":
-            if symbol == "*":
-                child = stack.pop()
-                node = Node(symbol, left=child)
-            else:
-                right = stack.pop()
-                left = stack.pop()
-                node = Node(symbol, left, right)
-            stack.append(node)
-    return stack.pop()
-
-def compute_nullable_first_last(node):
-    if node is None:
-        return
-    compute_nullable_first_last(node.left)
-    compute_nullable_first_last(node.right)
+            start, end = state_count, state_count + 1
+            transitions.setdefault(start, {}).setdefault(symbol, set()).add(end)
+            stack.append((start, end))
+            state_count += 2
+        elif symbol in {'|', '.', '*'}:
+            if symbol == '|':
+                s1_start, s1_end = stack.pop()
+                s2_start, s2_end = stack.pop()
+                new_start, new_end = state_count, state_count + 1
+                transitions.setdefault(new_start, {}).setdefault('', set()).update({s1_start, s2_start})
+                transitions.setdefault(s1_end, {}).setdefault('', set()).add(new_end)
+                transitions.setdefault(s2_end, {}).setdefault('', set()).add(new_end)
+                stack.append((new_start, new_end))
+                state_count += 2
+            elif symbol == '.':
+                s2_start, s2_end = stack.pop()
+                s1_start, s1_end = stack.pop()
+                transitions.setdefault(s1_end, {}).setdefault('', set()).add(s2_start)
+                stack.append((s1_start, s2_end))
+            elif symbol == '*':
+                s_start, s_end = stack.pop()
+                new_start, new_end = state_count, state_count + 1
+                transitions.setdefault(new_start, {}).setdefault('', set()).update({s_start, new_end})
+                transitions.setdefault(s_end, {}).setdefault('', set()).update({s_start, new_end})
+                stack.append((new_start, new_end))
+                state_count += 2
     
-    if node.value.isalnum():
-        node.nullable = False
-    elif node.value == "*":
-        node.nullable = True
-        node.firstpos = node.left.firstpos
-        node.lastpos = node.left.lastpos
-    elif node.value == "|":
-        node.nullable = node.left.nullable or node.right.nullable
-        node.firstpos = node.left.firstpos | node.right.firstpos
-        node.lastpos = node.left.lastpos | node.right.lastpos
-    elif node.value == ".":
-        node.nullable = node.left.nullable and node.right.nullable
-        node.firstpos = node.left.firstpos if not node.left.nullable else node.left.firstpos | node.right.firstpos
-        node.lastpos = node.right.lastpos if not node.right.nullable else node.left.lastpos | node.right.lastpos
+    start_state, final_state = stack.pop()
+    return {'start': start_state, 'final': {final_state}, 'transitions': transitions}
 
-def compute_followpos(node, followpos_table):
-    if node is None:
-        return
-    compute_followpos(node.left, followpos_table)
-    compute_followpos(node.right, followpos_table)
-    if node.value == ".":
-        for pos in node.left.lastpos:
-            followpos_table[pos] |= node.right.firstpos
-    elif node.value == "*":
-        for pos in node.lastpos:
-            followpos_table[pos] |= node.firstpos
+# Construcción del árbol de sintaxis
+def construct_syntax_tree(postfix):
+    tree = graphviz.Digraph(format='png')
+    node_count = 0
+    stack = []
+    
+    for symbol in postfix:
+        node_name = f"n{node_count}"
+        tree.node(node_name, label=symbol)
+        node_count += 1
+        
+        if symbol.isalnum():
+            stack.append(node_name)
+        else:
+            if symbol in {'|', '.', '*'}:
+                if symbol == '*':
+                    child = stack.pop()
+                    tree.edge(node_name, child)
+                else:
+                    right = stack.pop()
+                    left = stack.pop()
+                    tree.edge(node_name, left)
+                    tree.edge(node_name, right)
+                
+            stack.append(node_name)
+    
+    tree.render('static/syntax_tree', format='png', cleanup=True)
 
-def build_afd(infix_expression):
-    infix_expression = add_concat_operator(infix_expression)
-    postfix = infix_to_postfix(infix_expression)
-    tree = postfix_to_tree(postfix)
-    compute_nullable_first_last(tree)
-    followpos_table = defaultdict(set)
-    compute_followpos(tree, followpos_table)
-    return postfix, tree, followpos_table
-
-def visualize_tree(tree):
+# Visualización del AF usando Graphviz
+def visualize_automaton(automaton, filename):
     dot = graphviz.Digraph(format='png')
+    for state in automaton['transitions']:
+        shape = 'doublecircle' if state in automaton['final'] else 'circle'
+        dot.node(str(state), shape=shape)
     
-    def add_nodes_edges(node):
-        if node:
-            label = f"{node.value}\nNullable: {node.nullable}\nFirstpos: {node.firstpos}\nLastpos: {node.lastpos}"
-            dot.node(str(id(node)), label)
-            if node.left:
-                dot.edge(str(id(node)), str(id(node.left)))
-                add_nodes_edges(node.left)
-            if node.right:
-                dot.edge(str(id(node)), str(id(node.right)))
-                add_nodes_edges(node.right)
+    for state, trans_dict in automaton['transitions'].items():
+        for symbol, next_states in trans_dict.items():
+            for next_state in next_states:
+                dot.edge(str(state), str(next_state), label=symbol if symbol else 'ε')
     
-    add_nodes_edges(tree)
-    image_path = "static/syntax_tree.png"
-    dot.render(image_path[:-4])
-    return image_path
+    dot.render(filename, cleanup=True)
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    image_path = None
-    postfix = ""
-    followpos_table = {}
+    result = None
+    afn_path = None
+    afd_path = None
+    tree_path = None
     if request.method == 'POST':
-        infix_expression = request.form['expression']
-        postfix, tree, followpos_table = build_afd(infix_expression)
-        image_path = visualize_tree(tree)
-    return render_template('index.html', image_path=image_path, postfix=postfix, followpos_table=followpos_table)
+        expression = request.form['expression']
+        postfix = infix_to_postfix(expression)
+        afn = construct_afn(postfix)
+        construct_syntax_tree(postfix)
+        visualize_automaton(afn, 'static/afn')
+        result = f"Postfix: {postfix}"
+        afn_path = 'static/afn.png'
+        tree_path = 'static/syntax_tree.png'
+    return render_template('index.html', result=result, afn_path=afn_path, tree_path=tree_path)
 
 if __name__ == '__main__':
-    os.makedirs('static', exist_ok=True)
     app.run(debug=True)
