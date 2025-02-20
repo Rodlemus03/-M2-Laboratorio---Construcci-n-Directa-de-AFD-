@@ -5,7 +5,6 @@ from collections import defaultdict
 
 app = Flask(__name__)
 
-# Implementación del algoritmo de Shunting Yard
 def infix_to_postfix(expression):
     precedence = {'|': 1, '.': 2, '*': 3, '+': 3, '?': 3}
     output = []
@@ -30,7 +29,6 @@ def infix_to_postfix(expression):
     
     return ''.join(output)
 
-# Construcción del AFN
 def construct_afn(postfix):
     state_count = 0
     stack = []
@@ -68,7 +66,35 @@ def construct_afn(postfix):
     start_state, final_state = stack.pop()
     return {'start': start_state, 'final': {final_state}, 'transitions': transitions}
 
-# Construcción del árbol de sintaxis
+def construct_afd(afn):
+    dfa_transitions = {}
+    states = {frozenset([afn['start']]): 0}
+    queue = [frozenset([afn['start']])]
+    state_count = 1
+    final_states = set()
+    
+    while queue:
+        current_set = queue.pop()
+        state_id = states[current_set]
+        symbol_map = defaultdict(set)
+        
+        for state in current_set:
+            for symbol, to_states in afn['transitions'].get(state, {}).items():
+                symbol_map[symbol].update(to_states)
+        
+        for symbol, to_set in symbol_map.items():
+            to_set = frozenset(to_set)
+            if to_set not in states:
+                states[to_set] = state_count
+                queue.append(to_set)
+                state_count += 1
+            dfa_transitions.setdefault(state_id, {})[symbol] = states[to_set]
+            
+            if to_set & afn['final']:
+                final_states.add(states[to_set])
+    
+    return {'start': 0, 'final': final_states, 'transitions': dfa_transitions}
+
 def construct_syntax_tree(postfix):
     tree = graphviz.Digraph(format='png')
     node_count = 0
@@ -96,7 +122,6 @@ def construct_syntax_tree(postfix):
     
     tree.render('static/syntax_tree', format='png', cleanup=True)
 
-# Visualización del AF usando Graphviz
 def visualize_automaton(automaton, filename):
     dot = graphviz.Digraph(format='png')
     for state in automaton['transitions']:
@@ -105,8 +130,7 @@ def visualize_automaton(automaton, filename):
     
     for state, trans_dict in automaton['transitions'].items():
         for symbol, next_states in trans_dict.items():
-            for next_state in next_states:
-                dot.edge(str(state), str(next_state), label=symbol if symbol else 'ε')
+            dot.edge(str(state), str(next_states), label=symbol if symbol else 'ε')
     
     dot.render(filename, cleanup=True)
 
@@ -120,12 +144,15 @@ def index():
         expression = request.form['expression']
         postfix = infix_to_postfix(expression)
         afn = construct_afn(postfix)
+        afd = construct_afd(afn)
         construct_syntax_tree(postfix)
         visualize_automaton(afn, 'static/afn')
+        visualize_automaton(afd, 'static/afd')
         result = f"Postfix: {postfix}"
         afn_path = 'static/afn.png'
+        afd_path = 'static/afd.png'
         tree_path = 'static/syntax_tree.png'
-    return render_template('index.html', result=result, afn_path=afn_path, tree_path=tree_path)
+    return render_template('index.html', result=result, afn_path=afn_path, afd_path=afd_path, tree_path=tree_path)
 
 if __name__ == '__main__':
     app.run(debug=True)
